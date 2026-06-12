@@ -1,5 +1,3 @@
-// ==========================================
-// 1. IMPORTS & INITIALIZATION
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -13,19 +11,17 @@ require('dotenv').config();
 const User = require('./models/User');
 const app = express();
 
-// ==========================================
-// 2. GLOBAL APPLICABLE MIDDLEWARE
+// GLOBAL APPLICABLE MIDDLEWARE
 app.use(cors({
     origin: 'http://localhost:3000', 
     credentials: true, // Allows cookies to be sent back and forth
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 
-// Middleware to catch validation results and reject bad inputs
+// middleware to catch validation results and reject bad inputs
 const validateInputs = (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        // Return the very first error message encountered to keep it clean for the user
         return res.status(400).json({ message: errors.array()[0].msg });
     }
     next();
@@ -33,8 +29,8 @@ const validateInputs = (req, res, next) => {
 
 // DEFINE THE AUTHENTICATION RATE LIMITER RULE
 const authLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000, // 5 minutes timeframe (in milliseconds)
-    max: 5,                   // Limit each IP to 5 requests per windowMs
+    windowMs: 5 * 60 * 1000,  // 5 minutes timeframe
+    max: 10,                   // Limit each IP to 10 requests per windowMs
     message: { 
         message: "Too many attempts from this device. Please try again after 5 minutes." 
     },
@@ -49,10 +45,9 @@ mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("Connected to MongoDB successfully"))
     .catch(err => console.error("Database connection failed:", err));
 
-// ==========================================
-// 3. PUBLIC ROUTES
+// PUBLIC ROUTES
 // POST: http://localhost:8000/api/auth/register
-//      1. SECURED REGISTER ROUTE
+// 1. SECURED REGISTER ROUTE
 app.post('/api/auth/register', 
     authLimiter, 
     [
@@ -64,7 +59,7 @@ app.post('/api/auth/register',
             .matches(/\d/).withMessage('Password must contain at least one number.')
             .matches(/[A-Z]/).withMessage('Password must contain at least one uppercase letter.')
     ], 
-    validateInputs, // Processes the rules above
+    validateInputs,
     async (req, res) => {
         try {
             const { email, password } = req.body;
@@ -86,7 +81,7 @@ app.post('/api/auth/register',
 );
 
 // POST: http://localhost:8000/api/auth/login
-//      2. SECURED LOGIN ROUTE
+// 2. SECURED LOGIN ROUTE
 app.post('/api/auth/login', 
     authLimiter, 
     [
@@ -105,7 +100,7 @@ app.post('/api/auth/login',
             if (!isMatch) return res.status(400).json({ message: "Invalid email or password" });
 
             const token = jwt.sign(
-                { id: user._id, role: user.role }, // Payload contents
+                { id: user._id, role: user.role },
                 process.env.JWT_SECRET, 
                 { expiresIn: '1h' }
             );
@@ -124,12 +119,8 @@ app.post('/api/auth/login',
     }
 );
 
-// ==========================================
-// 4. PRIVATE / PROTECTED PATH CONFIGURATIONS
-
 // Token verification definition
 const verifyToken = (req, res, next) => {
-    // Look for the token inside the parsed cookies object
     const token = req.cookies.token; 
     
     if (!token) return res.status(401).json({ message: "Access denied. Token missing from session." });
@@ -146,21 +137,18 @@ const verifyToken = (req, res, next) => {
 // Flexible authorization gateway middleware
 const authorizeRoles = (...allowedRoles) => {
     return (req, res, next) => {
-        // 1. Double check that verifyToken successfully extracted the user payload
-        if (!req.user) {
+       if (!req.user) {
             return res.status(401).json({ message: "Unauthorized. Session verification required." });
         }
 
-        // 2. Evaluate if the user's role is included in the endpoint's allowed roles array
+        // Evaluate if the user's role is included in the endpoint's allowed roles array
         if (!allowedRoles.includes(req.user.role)) {
             return res.status(403).json({ message: `Access denied. ${req.user.role} tier cannot open this asset.` });
         }
 
-        next(); // Authorization approved! Proceed to core path controller logic
+        next(); // Authorization approved!
     };
 };
-
-// backend/server.js - Rectified Deletion Endpoint
 
 app.delete('/api/protected/delete-user/:id', verifyToken, async (req, res) => {
     try {
@@ -174,9 +162,7 @@ app.delete('/api/protected/delete-user/:id', verifyToken, async (req, res) => {
             return res.status(404).json({ message: "Target account record not found." });
         }
 
-        // ==========================================================================
-        // RECTIFIED SAFETY CHECK: DYNAMIC ROLE-SPECIFIC COUNT TRACKING
-        // ==========================================================================
+        // Dynamic Role Specific Count Tracking
         if (targetUserId === requestingUserId) {
             if (requestingUserRole === 'admin') {
                 const totalAdmins = await User.countDocuments({ role: 'admin' });
@@ -196,16 +182,12 @@ app.delete('/api/protected/delete-user/:id', verifyToken, async (req, res) => {
             }
         }
 
-        // ==========================================================================
-        // ROLE CHECK 1: SUPERADMIN OPERATIONAL RULES
-        // ==========================================================================
+        // SUPERADMIN OPERATIONAL RULES
         if (requestingUserRole === 'superadmin') {
             // Superadmins can delete users, admins, and other superadmins (if safety checks pass)
         }
 
-        // ==========================================================================
-        // ROLE CHECK 2: ADMIN OPERATIONAL RULES
-        // ==========================================================================
+        // ADMIN OPERATIONAL RULES
         else if (requestingUserRole === 'admin') {
             if (targetUserId !== requestingUserId) {
                 // If targeting someone else, it MUST be a standard 'user'
@@ -217,9 +199,7 @@ app.delete('/api/protected/delete-user/:id', verifyToken, async (req, res) => {
             }
         }
 
-        // ==========================================================================
-        // ROLE CHECK 3: REGULAR USER OPERATIONAL RULES
-        // ==========================================================================
+        // REGULAR USER OPERATIONAL RULES
         else if (requestingUserRole === 'user') {
             if (targetUserId !== requestingUserId) {
                 return res.status(403).json({ 
@@ -228,9 +208,7 @@ app.delete('/api/protected/delete-user/:id', verifyToken, async (req, res) => {
             }
         }
 
-        // ==========================================================================
-        // EXECUTION LAYER: Run database purge
-        // ==========================================================================
+        // EXECUTION: Run database purge
         await User.findByIdAndDelete(targetUserId);
 
         if (targetUserId === requestingUserId) {

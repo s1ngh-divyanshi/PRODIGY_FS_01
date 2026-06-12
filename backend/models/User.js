@@ -1,4 +1,3 @@
-// backend/models/User.js
 const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
@@ -14,9 +13,7 @@ const UserSchema = new mongoose.Schema({
         required: true 
     },
 
-    // ==========================================
     // ROLE-BASED SYSTEM ENFORCEMENT
-    // ==========================================
     role: {
         type: String,
         enum: ['user', 'admin', 'superadmin'], // Restricts input to these options
